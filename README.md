@@ -17,7 +17,9 @@ so you don't have to open Sennheiser Dongle Control:
 ## Use it
 
 1. Download `Btd700Tray.exe` from [Releases](../../releases), or build it (below).
-2. Run it. A headphones icon appears in the tray. Right-click it for the menu, double-click (or run the exe again) for
+2. Run it. If Windows shows "Windows protected your PC", click **More info > Run anyway**: the exe isn't code-signed
+   yet (see [Code signing policy](CODE_SIGNING_POLICY.md)), and the SHA-256 in the release notes lets you check the
+   download. A headphones icon appears in the tray. Right-click it for the menu, double-click (or run the exe again) for
    the window.
 3. For Gaming-while-a-game-runs: start your game, then in the window click **Edit games... > Add from running apps...**
    and pick it, then tick **Switch to Gaming while one of your games runs**.
@@ -42,6 +44,16 @@ Needs nothing but Windows: the C# compiler that ships with .NET Framework 4.x.
 ```
 build.cmd
 ```
+
+Release builds are made by the [build workflow](.github/workflows/build.yml) on GitHub's Windows runners: push a tag
+like `v1.1` (after bumping the version in `AssemblyInfo.cs`) and the exe is built and attached to that release.
+
+## Code signing policy
+
+See [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md).
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org)
+(applied for; until it's approved, releases are unsigned).
 
 ## How it talks to the dongle
 
@@ -72,6 +84,8 @@ This repository contains no Sennheiser code. On Linux, see [btd700ctl](https://g
 | `HeadsetMode.cs` | Mode switching, Gaming while a game runs, connect / disconnect, notifications |
 | `HeadsetForm.cs` | The window |
 | `Program.cs` | Tray icon and menu, settings, log, icon |
+| `AssemblyInfo.cs` | Product name and version shown in the exe's file details |
+| `.github/workflows/build.yml` | Builds the exe on GitHub, signs and attaches it to tagged releases |
 
 ## License
 

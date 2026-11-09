@@ -1,0 +1,88 @@
+# Builds Btd700Tray.exe on a GitHub-hosted Windows runner (SignPath only signs builds made here, not on a PC).
+# - Every push / pull request / manual run: build and keep the exe as a workflow artifact.
+# - A pushed tag like v1.1: also sign it through SignPath (once set up, see CODE_SIGNING_POLICY.md) and attach it
+#   to the GitHub release of that tag. Without SignPath set up, the unsigned exe is attached.
+#
+# SignPath setup, after the project is accepted:
+#   repository secret    SIGNPATH_API_TOKEN          (a SignPath user with submitter permission)
+#   repository variables SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG, SIGNPATH_SIGNING_POLICY_SLUG
+#   SignPath artifact configuration: the workflow artifact is a ZIP holding Btd700Tray.exe (product name
+#   "BTD 700 Tray", version from AssemblyInfo.cs), so its root is a zip-file with that one pe-file to sign.
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        shell: cmd
+        run: build.cmd
+
+      - name: Show file details
+        shell: pwsh
+        run: (Get-Item Btd700Tray.exe).VersionInfo | Format-List ProductName, ProductVersion, FileVersion
+
+      - name: Upload unsigned exe
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: Btd700Tray-unsigned
+          path: Btd700Tray.exe
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write   # attach the exe to the release
+      actions: read     # SignPath reads the workflow artifact
+    env:
+      SIGNPATH_CONFIGURED: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+    steps:
+      - name: Sign with SignPath
+        if: env.SIGNPATH_CONFIGURED == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ needs.build.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: out
+
+      - name: Use the unsigned exe (SignPath not set up yet)
+        if: env.SIGNPATH_CONFIGURED != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: Btd700Tray-unsigned
+          path: out
+
+      - name: Attach to the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $hash = (Get-FileHash out\Btd700Tray.exe -Algorithm SHA256).Hash
+          $signed = if ($env:SIGNPATH_CONFIGURED -eq 'true') { 'Signed' } else { 'Not signed yet' }
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --repo $env:GITHUB_REPOSITORY --title $tag --notes "$signed build of $tag.`n`nSHA-256: $hash"
+          }
+          gh release upload $tag out\Btd700Tray.exe --clobber --repo $env:GITHUB_REPOSITORY
