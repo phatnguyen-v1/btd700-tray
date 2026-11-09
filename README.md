@@ -4,9 +4,10 @@ A tiny Windows tray app for the **Sennheiser BTD 700** Bluetooth USB dongle. It 
 so you don't have to open Sennheiser Dongle Control:
 
 - **Switch the audio link mode**: Standard, Gaming (low latency) or Broadcast, from the tray menu or the window.
-- **Gaming while a game runs**: pick your games once. While any of them runs, the dongle switches to Gaming, and when
-  the last one closes it goes back to the mode it was in before. No more lip-sync lag in games, no more Gaming mode
-  left on for music.
+- **Gaming while a game runs**: while a game runs, the dongle switches to Gaming, and when it closes it goes back to
+  the mode it was in before. No more lip-sync lag in games, no more Gaming mode left on for music. Games are found
+  automatically (games Windows' Game Bar recognizes, and full-screen apps that aren't browsers or video players),
+  and you can add or exclude any app by hand.
 - **Disconnect the headset from this PC** (so your phone gets it cleanly over multipoint) and **connect it again**.
 - A small notification after every switch, and the current mode and connection in the tray tooltip.
 - Start with Windows (optional), single 34 KB exe, no installer, no admin rights.
@@ -21,8 +22,17 @@ so you don't have to open Sennheiser Dongle Control:
    yet (see [Code signing policy](CODE_SIGNING_POLICY.md)), and the SHA-256 in the release notes lets you check the
    download. A headphones icon appears in the tray. Right-click it for the menu, double-click (or run the exe again) for
    the window.
-3. For Gaming-while-a-game-runs: start your game, then in the window click **Edit games... > Add from running apps...**
-   and pick it, then tick **Switch to Gaming while one of your games runs**.
+3. For Gaming-while-a-game-runs, tick **Switch to Gaming while a game runs**. A game counts when it is:
+   - on **your games** (start it, then **Your games... > Add from running apps...**), or
+   - in **Windows' game list**: the games Game Bar has recognized on this PC (read from
+     `HKCU\System\GameConfigStore\Children`), or
+   - running **full screen** (exclusive or borderless, no title bar) for a few seconds. Browsers, video players,
+     PowerPoint, meeting apps, remote desktops, game launchers and Windows itself never count, so full-screen YouTube
+     or Netflix stays in its mode. Once a full-screen app counts, it stays a game until it exits, so alt-tabbing out
+     doesn't switch back and forth.
+
+   If something switches to Gaming that isn't a game, right-click the tray icon and pick **"…" isn't a game**, or add
+   it under **Not games...**. Both automatic ways can be turned off in the window.
 
 Settings are kept in `%APPDATA%\Btd700Tray\settings.ini`, with a log next to it (`log.txt`, **Open log** in the
 window). "Start with Windows" adds `Btd700Tray` to `HKCU\...\CurrentVersion\Run`.
@@ -82,6 +92,7 @@ This repository contains no Sennheiser code. On Linux, see [btd700ctl](https://g
 |---|---|
 | `Btd700.cs` | Talks to the dongle over HID (Win32 `hid.dll` / `setupapi.dll`, no libraries) |
 | `HeadsetMode.cs` | Mode switching, Gaming while a game runs, connect / disconnect, notifications |
+| `GameDetector.cs` | Finds a running game: your list, Windows' game list, full-screen apps |
 | `HeadsetForm.cs` | The window |
 | `Program.cs` | Tray icon and menu, settings, log, icon |
 | `AssemblyInfo.cs` | Product name and version shown in the exe's file details |

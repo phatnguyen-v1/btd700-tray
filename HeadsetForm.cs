@@ -13,6 +13,9 @@ public class HeadsetForm : Form
     readonly Button connectButton = new Button();
     readonly CheckBox autoGamingBox = new CheckBox();
     readonly Label gamesInfo = Info();
+    readonly CheckBox windowsGamesBox = SubBox("Also games Windows recognizes (Game Bar's list)");
+    readonly CheckBox fullScreenBox = SubBox("Also full-screen apps (never browsers or video players)");
+    readonly Label notGamesInfo = Info();
     readonly CheckBox startupBox = new CheckBox();
     readonly Timer timer = new Timer();
     bool updating;
@@ -63,16 +66,37 @@ public class HeadsetForm : Form
             info.Text = s.HeadsetConnected ? "Disconnecting..." : "Connecting...";
         };
 
-        autoGamingBox.Text = "Switch to Gaming while one of your games runs, then back";
+        autoGamingBox.Text = "Switch to Gaming while a game runs, then back";
         autoGamingBox.AutoSize = true;
         autoGamingBox.Margin = new Padding(3, 6, 3, 3);
         autoGamingBox.CheckedChanged += delegate { if (!updating) { Settings.AutoGaming = autoGamingBox.Checked; Settings.Save(); } UpdateView(); };
 
+        windowsGamesBox.CheckedChanged += delegate { if (!updating) { Settings.DetectWindowsGames = windowsGamesBox.Checked; Settings.Save(); } UpdateView(); };
+        fullScreenBox.CheckedChanged += delegate { if (!updating) { Settings.DetectFullScreen = fullScreenBox.Checked; Settings.Save(); } UpdateView(); };
+
+        FlowLayoutPanel gameButtons = new FlowLayoutPanel();
+        gameButtons.AutoSize = true;
+        gameButtons.Margin = new Padding(17, 0, 3, 3);
         Button gamesButton = new Button();
-        gamesButton.Text = "Edit games...";
+        gamesButton.Text = "Your games...";
         gamesButton.AutoSize = true;
-        gamesButton.Margin = new Padding(20, 3, 3, 3);
-        gamesButton.Click += delegate { EditGames(); UpdateView(); };
+        gamesButton.Click += delegate
+        {
+            EditList(Settings.Games, Settings.NotGames, "Your games",
+                "While any of these is running, the dongle switches to Gaming. Start a game, then add it from the running apps.");
+            UpdateView();
+        };
+        Button notGamesButton = new Button();
+        notGamesButton.Text = "Not games...";
+        notGamesButton.AutoSize = true;
+        notGamesButton.Click += delegate
+        {
+            EditList(Settings.NotGames, Settings.Games, "Not games",
+                "These never switch the dongle to Gaming, even if Windows lists them as games or they run full screen.");
+            UpdateView();
+        };
+        gameButtons.Controls.Add(gamesButton);
+        gameButtons.Controls.Add(notGamesButton);
 
         startupBox.Text = "Start with Windows";
         startupBox.AutoSize = true;
@@ -94,7 +118,7 @@ public class HeadsetForm : Form
         note.Margin = new Padding(3, 12, 3, 3);
         note.Text = "Unofficial tool, not affiliated with Sennheiser. Firmware updates still need Sennheiser Dongle Control.";
 
-        panel.Controls.AddRange(new Control[] { modes, info, connectButton, autoGamingBox, gamesInfo, gamesButton, startupBox, logButton, note });
+        panel.Controls.AddRange(new Control[] { modes, info, connectButton, autoGamingBox, windowsGamesBox, fullScreenBox, gamesInfo, notGamesInfo, gameButtons, startupBox, logButton, note });
         Controls.Add(panel);
 
         headset.Changed += UpdateView;
@@ -111,6 +135,15 @@ public class HeadsetForm : Form
         l.ForeColor = SystemColors.GrayText;
         l.Margin = new Padding(20, 0, 3, 3);
         return l;
+    }
+
+    static CheckBox SubBox(string text)
+    {
+        CheckBox b = new CheckBox();
+        b.Text = text;
+        b.AutoSize = true;
+        b.Margin = new Padding(20, 0, 3, 0);
+        return b;
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e)
@@ -131,6 +164,9 @@ public class HeadsetForm : Form
             modeButtons[i].Checked = s != null && (int)s.Mode == i;
         }
         autoGamingBox.Checked = Settings.AutoGaming;
+        windowsGamesBox.Checked = Settings.DetectWindowsGames;
+        fullScreenBox.Checked = Settings.DetectFullScreen;
+        windowsGamesBox.Enabled = fullScreenBox.Enabled = Settings.AutoGaming;
         try { startupBox.Checked = Settings.StartWithWindows; } catch { }
         updating = false;
 
@@ -138,15 +174,22 @@ public class HeadsetForm : Form
         if (!busy || s != null) info.Text = headset.StatusText;
         connectButton.Text = s != null && !s.HeadsetConnected ? "Connect headset to this PC" : "Disconnect headset from this PC";
         connectButton.Enabled = s != null;
-        string[] games;
-        lock (Settings.Games) games = Settings.Games.ToArray();
-        gamesInfo.Text = "Games: " + (games.Length == 0 ? "none yet" : string.Join(", ", games));
+        gamesInfo.Text = "Your games: " + Names(Settings.Games);
+        notGamesInfo.Text = "Not games: " + Names(Settings.NotGames);
     }
 
-    void EditGames()
+    static string Names(List<string> list)
+    {
+        string[] names;
+        lock (list) names = list.ToArray();
+        return names.Length == 0 ? "none yet" : string.Join(", ", names);
+    }
+
+    // Edits your games or not games; adding a name to one list takes it off the other.
+    void EditList(List<string> target, List<string> other, string title, string hintText)
     {
         Form dlg = new Form();
-        dlg.Text = "Your games";
+        dlg.Text = title;
         dlg.Icon = AppIcon.Value;
         dlg.Font = Font;
         dlg.StartPosition = FormStartPosition.CenterParent;
@@ -154,7 +197,7 @@ public class HeadsetForm : Form
         dlg.MinimizeBox = dlg.MaximizeBox = false;
 
         Label hint = new Label();
-        hint.Text = "While any of these is running, the dongle switches to Gaming. Start a game, then add it from the running apps.";
+        hint.Text = hintText;
         hint.Dock = DockStyle.Top;
         hint.Padding = new Padding(4);
         hint.Height = 44;
@@ -162,7 +205,7 @@ public class HeadsetForm : Form
         ListBox list = new ListBox();
         list.Dock = DockStyle.Fill;
         list.IntegralHeight = false;
-        lock (Settings.Games) foreach (string g in Settings.Games) list.Items.Add(g);
+        lock (target) foreach (string g in target) list.Items.Add(g);
 
         FlowLayoutPanel buttons = new FlowLayoutPanel();
         buttons.Dock = DockStyle.Bottom;
@@ -174,7 +217,8 @@ public class HeadsetForm : Form
         {
             string name = PickRunningApp(dlg);
             if (name == null) return;
-            lock (Settings.Games) if (!Settings.Games.Contains(name)) Settings.Games.Add(name);
+            lock (target) if (!target.Contains(name)) target.Add(name);
+            lock (other) other.Remove(name);
             Settings.Save();
             if (!list.Items.Contains(name)) list.Items.Add(name);
         };
@@ -185,7 +229,7 @@ public class HeadsetForm : Form
         {
             string name = list.SelectedItem as string;
             if (name == null) return;
-            lock (Settings.Games) Settings.Games.Remove(name);
+            lock (target) target.Remove(name);
             Settings.Save();
             list.Items.Remove(name);
         };

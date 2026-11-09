@@ -59,6 +59,8 @@ public static class AppLog
 // settings.ini in %APPDATA%\Btd700Tray:
 //   autogaming=on
 //   game=cs2      (one line per game, process name without .exe)
+//   detectwindowsgames=on, detectfullscreen=on   (also count games Windows knows, and full-screen apps)
+//   notgame=steam (never counted as a game)
 public static class Settings
 {
     public static readonly string Folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Btd700Tray");
@@ -68,6 +70,9 @@ public static class Settings
 
     public static bool AutoGaming = false;
     public static readonly List<string> Games = new List<string>(); // lock it: the headset thread reads it
+    public static readonly List<string> NotGames = new List<string>(); // never counted as games; lock it too
+    public static bool DetectWindowsGames = true;   // also games in Windows' game list (GameDetector.cs)
+    public static bool DetectFullScreen = true;     // also full-screen apps that aren't browsers or players
 
     public static void Load()
     {
@@ -80,6 +85,9 @@ public static class Settings
                 string key = line.Substring(0, eq).Trim(), value = line.Substring(eq + 1).Trim();
                 if (key == "autogaming") AutoGaming = value == "on";
                 else if (key == "game" && value != "") lock (Games) if (!Games.Contains(value)) Games.Add(value);
+                else if (key == "notgame" && value != "") lock (NotGames) if (!NotGames.Contains(value)) NotGames.Add(value);
+                else if (key == "detectwindowsgames") DetectWindowsGames = value != "off";
+                else if (key == "detectfullscreen") DetectFullScreen = value != "off";
             }
         }
         catch { } // no file yet: keep the defaults
@@ -89,6 +97,9 @@ public static class Settings
     {
         string text = "autogaming=" + (AutoGaming ? "on" : "off") + "\r\n";
         lock (Games) foreach (string g in Games) text += "game=" + g + "\r\n";
+        text += "detectwindowsgames=" + (DetectWindowsGames ? "on" : "off") + "\r\n";
+        text += "detectfullscreen=" + (DetectFullScreen ? "on" : "off") + "\r\n";
+        lock (NotGames) foreach (string g in NotGames) text += "notgame=" + g + "\r\n";
         try { Directory.CreateDirectory(Folder); File.WriteAllText(FilePath, text); }
         catch (Exception ex) { AppLog.Write("app", "could not save settings: " + ex.Message); }
     }
@@ -118,6 +129,7 @@ class TrayApp : ApplicationContext
     readonly HeadsetMode headset;
     readonly ToolStripMenuItem connectItem;
     readonly ToolStripMenuItem autoGamingItem;
+    readonly ToolStripMenuItem notAGameItem;
     readonly List<ToolStripMenuItem> modeItems = new List<ToolStripMenuItem>();
     HeadsetForm window;
 
@@ -150,6 +162,15 @@ class TrayApp : ApplicationContext
         menu.Items.Add(connectItem);
         autoGamingItem = new ToolStripMenuItem("Gaming while a game runs", null, delegate { Settings.AutoGaming = !Settings.AutoGaming; Settings.Save(); UpdateTray(); });
         menu.Items.Add(autoGamingItem);
+        notAGameItem = new ToolStripMenuItem("", null, delegate
+        {
+            GameHit g = headset.RunningGame;
+            if (g == null) return;
+            lock (Settings.NotGames) if (!Settings.NotGames.Contains(g.Name)) Settings.NotGames.Add(g.Name);
+            lock (Settings.Games) Settings.Games.Remove(g.Name);
+            Settings.Save();
+        });
+        menu.Items.Add(notAGameItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, delegate { ExitThread(); });
         menu.Opening += delegate { headset.WantStatus(); UpdateTray(); };
@@ -176,6 +197,9 @@ class TrayApp : ApplicationContext
         connectItem.Text = s != null && !s.HeadsetConnected ? "Connect headset to this PC" : "Disconnect headset from this PC";
         connectItem.Enabled = s != null;
         autoGamingItem.Checked = Settings.AutoGaming;
+        GameHit game = headset == null ? null : headset.RunningGame;
+        notAGameItem.Visible = game != null;
+        if (game != null) notAGameItem.Text = "\"" + game.Name + "\" isn't a game (found by " + game.How + ")";
         tray.Text = Program.Name + (s == null ? "" : " - " + s.Mode + (s.HeadsetConnected ? "" : ", headset not connected"));
     }
 

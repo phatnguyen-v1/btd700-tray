@@ -18,7 +18,7 @@ public class HeadsetMode
     DateTime wantStatusUntil;
     bool autoSwitched;              // we put it in Gaming because a game started
     BtdMode modeBeforeGame;
-    string runningGame;
+    GameHit runningGame;
 
     public event Action Changed;    // raised on the UI thread after a new read or switch
     public event Action<string, bool> Notify; // text, is error; raised on the UI thread after each switch
@@ -44,13 +44,16 @@ public class HeadsetMode
                     : "headset connected over " + TransportName(s.ConnectedTransport) + (s.Link >= 3 ? ", streaming" : ""));
             if (Settings.AutoGaming)
             {
-                string game = runningGame;
-                text += "\n" + (game != null ? game + " is running" + (autoSwitched ? ": switched to Gaming, goes back to " + modeBeforeGame + " when it closes" : "")
-                    : GameCount() == 0 ? "Add your games below" : "No game running");
+                GameHit game = runningGame;
+                text += "\n" + (game != null ? game.Name + " is running (" + game.How + ")" + (autoSwitched ? ": switched to Gaming, goes back to " + modeBeforeGame + " when it closes" : "")
+                    : GameCount() == 0 && !Settings.DetectWindowsGames && !Settings.DetectFullScreen ? "Add your games below" : "No game running");
             }
             return text;
         }
     }
+
+    // The game running now, null if none (or Gaming-while-a-game-runs is off).
+    public GameHit RunningGame { get { return runningGame; } }
 
     // Ask for fresh status for a few seconds (the status window calls this every second while open).
     public void WantStatus()
@@ -127,9 +130,10 @@ public class HeadsetMode
 
     void Check()
     {
-        string game = Settings.AutoGaming ? FindRunningGame() : null;
-        bool gameChanged = game != runningGame;
+        GameHit game = Settings.AutoGaming ? GameDetector.Find() : null;
+        bool gameChanged = (game == null ? null : game.Name) != (runningGame == null ? null : runningGame.Name);
         runningGame = game;
+        if (gameChanged) AppLog.Write("headset", game == null ? "no game running" : "game running: " + game.Name + " (" + game.How + ")");
 
         if (game != null && gameChanged && !autoSwitched)
         {
@@ -137,7 +141,7 @@ public class HeadsetMode
             if (state != null && state.Mode != BtdMode.Gaming)
             {
                 modeBeforeGame = state.Mode;
-                autoSwitched = Apply(BtdMode.Gaming, game + " started: switched to Gaming");
+                autoSwitched = Apply(BtdMode.Gaming, game.Name + " started: switched to Gaming");
             }
         }
         else if (game == null && autoSwitched)
@@ -191,21 +195,6 @@ public class HeadsetMode
     {
         Action h = Changed;
         if (h != null && ui != null) ui.Post(delegate { h(); }, null);
-    }
-
-    static string FindRunningGame()
-    {
-        string[] games;
-        lock (Settings.Games) games = Settings.Games.ToArray();
-        if (games.Length == 0) return null;
-        string found = null;
-        foreach (Process p in Process.GetProcesses())
-        {
-            if (found == null && Array.Exists(games, delegate(string g) { return string.Equals(g, p.ProcessName, StringComparison.OrdinalIgnoreCase); }))
-                found = p.ProcessName;
-            p.Dispose();
-        }
-        return found;
     }
 
     static int GameCount()
