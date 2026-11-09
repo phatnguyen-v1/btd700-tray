@@ -1,0 +1,2 @@
+# build output (build.cmd); attach the exe to a GitHub release instead
+*.exe
